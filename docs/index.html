@@ -73,6 +73,9 @@
   textarea{width:100%;font-family:var(--mono);font-size:13px;line-height:1.55;border:1px solid var(--line);border-radius:10px;padding:12px;background:#fff;color:var(--ink);resize:vertical}
   @media(prefers-color-scheme:dark){textarea{background:#0d0d10}}
   #req{min-height:96px}#reg{min-height:230px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);background:var(--panel);font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend code{background:var(--panel2);border:1px solid var(--line)}
   .out{border-top:1px solid var(--line);padding:18px 16px;min-height:80px}
   .verdict{font-family:var(--mono);font-size:13px;font-weight:700;margin-bottom:12px}
   .verdict.ok{color:var(--ok)}.verdict.bad{color:var(--err)}
@@ -121,24 +124,36 @@
 
 <section id="try"><div class="wrap">
   <h2>The resolver, live</h2>
-  <p class="sub">Edit the package universe and the project's requirements, then resolve. It runs the real PubGrub algorithm in your browser and either pins every version or shows the proof of the conflict.</p>
+  <p class="sub">Two boxes. On the left, what your project asks for. On the right, every package version that exists and what each one needs. Hit Resolve and the real PubGrub algorithm runs in your browser. It either pins one version of everything, or explains in plain English why no combination works. New here? Tap a preset below to load a ready-made example.</p>
 
   <div class="play">
     <div class="bar">
       <span class="chip" data-preset="ok">Load: solvable</span>
-      <span class="chip" data-preset="bad">Load: a conflict</span>
+      <span class="chip" data-preset="webapp">Load: web app stack</span>
+      <span class="chip" data-preset="chain">Load: deep chain</span>
+      <span class="chip" data-preset="backtrack">Load: backtracking</span>
+      <span class="chip" data-preset="diamondok">Load: diamond that fits</span>
       <span class="chip" data-preset="diamond">Load: diamond clash</span>
+      <span class="chip" data-preset="pinclash">Load: pin vs range</span>
+      <span class="chip" data-preset="bad">Load: a conflict</span>
       <span class="chip run" id="run">Resolve ▶</span>
     </div>
     <div class="grid">
       <div class="cell">
-        <h4>Project requires (name constraint)</h4>
+        <h4>What your project needs · one per line: name then version range</h4>
         <textarea id="req" spellcheck="false"></textarea>
       </div>
       <div class="cell">
-        <h4>Registry (package version, then indented deps)</h4>
+        <h4>Packages that exist · name and version, then its own needs indented below</h4>
         <textarea id="reg" spellcheck="false"></textarea>
       </div>
+    </div>
+    <div class="legend">
+      <span><code>^1.0</code> compatible updates</span>
+      <span><code>~1.2</code> patch updates only</span>
+      <span><code>&gt;=1.0, &lt;2.0</code> a range</span>
+      <span><code>1.0.0</code> that exact version</span>
+      <span><code>*</code> any version</span>
     </div>
     <div class="out" id="out"></div>
   </div>
@@ -447,7 +462,12 @@ function renderTree(reqs,map,provider){
 const PRESETS={
   ok:{req:"web ^1.0\njson ^1.2",reg:"web 1.0.0\n  http ^1.0\n  json ^1.2\nweb 1.1.0\n  http ^1.2\n  json ^1.2\nhttp 1.0.0\n  bytes ^1.0\nhttp 1.2.0\n  bytes ^1.1\nhttp 1.3.0\n  bytes ^1.1\njson 1.2.0\n  bytes ^1.0\njson 1.3.0\n  bytes ^1.1\nbytes 1.0.0\nbytes 1.1.0\nbytes 1.1.5"},
   bad:{req:"http ^1.2\nbytes =1.0.0",reg:"http 1.2.0\n  bytes ^1.1\nhttp 1.3.0\n  bytes ^1.1\nbytes 1.0.0\nbytes 1.1.0\nbytes 1.1.5"},
-  diamond:{req:"foo ^1.0\nbar ^1.0",reg:"foo 1.0.0\n  shared ^1.0\nbar 1.0.0\n  shared ^2.0\nshared 1.0.0\nshared 2.0.0"}
+  diamond:{req:"foo ^1.0\nbar ^1.0",reg:"foo 1.0.0\n  shared ^1.0\nbar 1.0.0\n  shared ^2.0\nshared 1.0.0\nshared 2.0.0"},
+  chain:{req:"app ^1.0",reg:"app 1.0.0\n  router ^1.0\nrouter 1.0.0\n  matcher ^1.0\nmatcher 1.0.0\n  regex ^1.0\nregex 1.0.0\n  parser ^1.0\nparser 1.0.0\n  unicode ^1.0\nunicode 1.0.0"},
+  backtrack:{req:"app *\nconfig =1.0.0",reg:"app 2.0.0\n  config ^2.0\napp 1.0.0\n  config ^1.0\nconfig 1.0.0\nconfig 2.0.0"},
+  diamondok:{req:"foo ^1.0\nbar ^1.0",reg:"foo 1.0.0\n  shared ^1.0\nbar 1.0.0\n  shared ^1.2\nshared 1.0.0\nshared 1.2.0\nshared 1.5.0"},
+  pinclash:{req:"imaging ^1.0\ncodec =1.0.0",reg:"imaging 1.0.0\n  codec ^2.0\ncodec 1.0.0\ncodec 2.0.0"},
+  webapp:{req:"server ^2.0\nlogger ^1.0",reg:"server 2.1.0\n  router ^1.0\n  json ^1.0\nrouter 1.2.0\n  json ^1.0\nlogger 1.3.0\n  json ^1.0\njson 1.4.0"}
 };
 const $=id=>document.getElementById(id);
 function load(name){ $('req').value=PRESETS[name].req; $('reg').value=PRESETS[name].reg; run(); }
