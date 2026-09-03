@@ -1,12 +1,458 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>quartermaster</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quartermaster: a package manager with a readable PubGrub dependency resolver, by Pavan Nallamothu</title>
+<meta name="description" content="Quartermaster is a from-scratch package manager in Rust whose core is a readable PubGrub dependency resolver that explains version conflicts in plain English. Resolve constraints, get a lockfile, or a step-by-step proof of why the dependencies conflict. By Pavan Nallamothu (pavanchow).">
+<meta name="author" content="Pavan Nallamothu">
+<meta name="keywords" content="package manager, dependency resolver, PubGrub, version solver, semver, conflict explanation, lockfile, Rust, Pavan Nallamothu, pavanchow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Quartermaster: a readable PubGrub dependency resolver">
+<meta property="og:description" content="A from-scratch package manager in Rust that resolves version constraints and explains conflicts in plain English. Try the resolver live in your browser.">
+<meta property="og:url" content="https://pavanchow.github.io/quartermaster/">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Quartermaster","description":"A package manager with a readable PubGrub dependency resolver that explains conflicts in plain English.","programmingLanguage":"Rust","codeRepository":"https://github.com/pavanchow/quartermaster","author":{"@type":"Person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow"}}
+</script>
+<style>
+  :root{
+    --accent:#3d63dd;--accent-soft:#eef1fd;
+    --ink:#14151a;--muted:#14151a;--faint:#14151a;
+    --line:#e8e8ec;--panel:#f7f7f9;--panel2:#fbfbfd;
+    --ok:#137a3f;--err:#c02637;
+    --mono:ui-monospace,SFMono-Regular,Menlo,"SF Mono",monospace;
+  }
+  @media(prefers-color-scheme:dark){
+    :root{--accent:#7d97f4;--accent-soft:#1a2140;--ink:#f3f3f6;--muted:#f3f3f6;--faint:#f3f3f6;
+      --line:#28282e;--panel:#161619;--panel2:#101013;--ok:#54c07a;--err:#ff6b78;}
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:#fff;color:var(--ink);font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  /* Dark background override AFTER the base rule so the cascade keeps it. */
+  @media(prefers-color-scheme:dark){body{background:#0a0a0c}}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 28px}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.9em;background:var(--panel);border-radius:4px;padding:.12em .4em}
+
+  nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.8);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
+  @media(prefers-color-scheme:dark){nav{background:rgba(10,10,12,.72)}}
+  nav .row{display:flex;justify-content:space-between;align-items:center;height:54px;max-width:1000px;margin:0 auto;padding:0 28px}
+  .brand{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:650;letter-spacing:-.01em}
+  .gem{width:15px;height:15px;border-radius:5px;background:linear-gradient(135deg,var(--accent),#8ea2f6)}
+  .links{display:flex;gap:24px;align-items:center;font-size:14.5px}
+  @media(max-width:640px){.links a:not(.gh){display:none}}
+
+  .hero{text-align:center;padding:90px 0 40px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:22px}
+  h1{font-size:clamp(40px,7vw,68px);line-height:1.03;letter-spacing:-.035em;font-weight:680}
+  .lead{font-size:clamp(17px,2.3vw,21px);color:var(--muted);max-width:660px;margin:26px auto 0}
+  .cta{display:flex;gap:12px;justify-content:center;margin-top:34px;flex-wrap:wrap}
+  .btn{display:inline-block;padding:12px 22px;border-radius:980px;font-size:15px;font-weight:550;border:1px solid transparent}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{border-color:var(--line);color:var(--ink)}
+  .btn:hover{opacity:.9;text-decoration:none}
+
+  section{padding:72px 0;border-top:1px solid var(--line)}
+  h2{font-size:clamp(27px,4vw,38px);letter-spacing:-.025em;line-height:1.1;font-weight:660;text-align:center}
+  .sub{text-align:center;color:var(--muted);max-width:640px;margin:16px auto 0;font-size:17px}
+
+  /* playground */
+  .play{margin-top:34px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--panel2)}
+  .play .bar{display:flex;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:12.5px;padding:6px 12px;border-radius:980px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+  .chip:hover{border-color:var(--accent)}
+  .chip.run{background:var(--accent);color:#fff;border-color:var(--accent);margin-left:auto;font-weight:600}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .cell{padding:16px}
+  .cell + .cell{border-left:1px solid var(--line)}
+  @media(max-width:760px){.cell + .cell{border-left:none;border-top:1px solid var(--line)}}
+  .cell h4{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:9px;font-weight:600}
+  textarea{width:100%;font-family:var(--mono);font-size:13px;line-height:1.55;border:1px solid var(--line);border-radius:10px;padding:12px;background:#fff;color:var(--ink);resize:vertical}
+  @media(prefers-color-scheme:dark){textarea{background:#0d0d10}}
+  #req{min-height:96px}#reg{min-height:230px}
+  .out{border-top:1px solid var(--line);padding:18px 16px;min-height:80px}
+  .verdict{font-family:var(--mono);font-size:13px;font-weight:700;margin-bottom:12px}
+  .verdict.ok{color:var(--ok)}.verdict.bad{color:var(--err)}
+  .pins{font-family:var(--mono);font-size:13px;line-height:1.7}
+  .pins .v{color:var(--accent)}
+  .tree{font-family:var(--mono);font-size:12.5px;line-height:1.65;white-space:pre;color:var(--muted);margin-top:12px;overflow-x:auto}
+  .proof{list-style:none;counter-reset:step}
+  .proof li{position:relative;padding:8px 0 8px 34px;font-size:14.5px;line-height:1.5;border-bottom:1px solid var(--line)}
+  .proof li:last-child{border-bottom:none;font-weight:600}
+  .proof li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:8px;width:22px;height:22px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .proof b{color:var(--accent);font-weight:600}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:40px}
+  @media(max-width:720px){.two{grid-template-columns:1fr}}
+  .card{border:1px solid var(--line);border-radius:16px;padding:24px;background:var(--panel2)}
+  .card h3{font-size:19px;letter-spacing:-.01em;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:15px}
+  .card .n{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700;margin-bottom:12px}
+
+  pre.blk{background:#14151a;color:#e9e9f2;border-radius:14px;padding:18px 20px;font-family:var(--mono);font-size:13px;line-height:1.6;overflow-x:auto;margin:22px auto 0;max-width:720px}
+  pre.blk .c{color:#8b8f9e}pre.blk .k{color:#7fd6a0}pre.blk .a{color:#8ea2f6}
+  footer{padding:56px 0;border-top:1px solid var(--line);text-align:center;color:var(--muted);font-size:14px}
+  footer .name{color:var(--ink);font-weight:600}
+</style>
 </head>
 <body>
-<h1>quartermaster</h1>
-<p>Site coming soon.</p>
-<p><a href="https://github.com/pavanchow/quartermaster">View repository</a></p>
+<noscript><div class="wrap" style="padding:40px 0">Quartermaster is a from-scratch package manager in Rust whose core is a readable PubGrub dependency resolver that explains version conflicts in plain English. By Pavan Nallamothu. Source: <a href="https://github.com/pavanchow/quartermaster">github.com/pavanchow/quartermaster</a>.</div></noscript>
+
+<nav><div class="row">
+  <div class="brand"><span class="gem"></span>Quartermaster</div>
+  <div class="links">
+    <a href="#try">Try it</a><a href="#why">Why</a><a href="#how">How</a>
+    <a class="gh" href="https://github.com/pavanchow/quartermaster">GitHub</a>
+  </div>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <div class="eyebrow">Rust · PubGrub dependency resolver</div>
+  <h1>Resolve versions.<br>Understand conflicts.</h1>
+  <p class="lead">A from-scratch package manager whose interesting half is the resolver: a readable PubGrub version solver that pins every dependency, or proves in plain English why it can't. Try it live below.</p>
+  <div class="cta">
+    <a class="btn primary" href="#try">Open the resolver</a>
+    <a class="btn ghost" href="https://github.com/pavanchow/quartermaster">View source</a>
+  </div>
+</div></header>
+
+<section id="try"><div class="wrap">
+  <h2>The resolver, live</h2>
+  <p class="sub">Edit the package universe and the project's requirements, then resolve. It runs the real PubGrub algorithm in your browser and either pins every version or shows the proof of the conflict.</p>
+
+  <div class="play">
+    <div class="bar">
+      <span class="chip" data-preset="ok">Load: solvable</span>
+      <span class="chip" data-preset="bad">Load: a conflict</span>
+      <span class="chip" data-preset="diamond">Load: diamond clash</span>
+      <span class="chip run" id="run">Resolve ▶</span>
+    </div>
+    <div class="grid">
+      <div class="cell">
+        <h4>Project requires (name constraint)</h4>
+        <textarea id="req" spellcheck="false"></textarea>
+      </div>
+      <div class="cell">
+        <h4>Registry (package version, then indented deps)</h4>
+        <textarea id="reg" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="out" id="out"></div>
+  </div>
+</div></section>
+
+<section id="why"><div class="wrap">
+  <h2>The part everyone else skips</h2>
+  <p class="sub">Every build-your-own package manager hand-waves resolution and every real one explains failures badly. Quartermaster is built around exactly those two things.</p>
+  <div class="two">
+    <div class="card">
+      <div class="n">01</div>
+      <h3>A real resolver</h3>
+      <p>Picking one version of every package so all constraints hold is NP-hard. Quartermaster uses PubGrub, the same conflict-driven algorithm as Dart's <code>pub</code> and <code>uv</code>: unit propagation, learned incompatibilities, and backjumping. Not a greedy toy.</p>
+    </div>
+    <div class="card">
+      <div class="n">02</div>
+      <h3>Failures are proofs</h3>
+      <p>When <code>npm</code> or <code>pip</code> can't resolve, they dump version numbers. Quartermaster hands back the derivation path in English, ending at the exact two requirements that collide, so a person or an AI agent knows what to change.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2>How it works</h2>
+  <p class="sub">Two moves alternate over a growing set of incompatibilities, combinations of versions that cannot coexist.</p>
+  <div class="two">
+    <div class="card">
+      <div class="n">Propagate</div>
+      <h3>Forced facts</h3>
+      <p>When an incompatibility has all but one term already forced by earlier choices, the last term's negation becomes a new derived fact. When every term is forced, that's a conflict.</p>
+    </div>
+    <div class="card">
+      <div class="n">Decide &amp; backjump</div>
+      <h3>Try, learn, retreat</h3>
+      <p>Pick a required package, take its highest allowed version, add its dependencies. On a conflict, resolve it against its cause into a new incompatibility and jump straight back to where that becomes decisive, never re-treading dead branches.</p>
+    </div>
+  </div>
+<pre class="blk"><span class="c"># the version algebra is boundary-exact: ranges are interval sets</span>
+<span class="k">^1.2.3</span>  <span class="c">→  &gt;=1.2.3, &lt;2.0.0</span>
+<span class="k">~1.2.0</span>  <span class="c">→  &gt;=1.2.0, &lt;1.3.0</span>
+<span class="k">1 || 3</span>  <span class="c">→  &gt;=1.0.0,&lt;2.0.0  or  &gt;=3.0.0,&lt;4.0.0</span>
+
+<span class="c"># intersection, union, and complement are total and exact,</span>
+<span class="c"># so the solver reasons correctly instead of string-matching versions.</span></pre>
+</div></section>
+
+<footer><div class="wrap">
+  <p>Quartermaster — a package manager with a readable PubGrub dependency resolver.</p>
+  <p>Built from scratch in Rust by <span class="name">Pavan Nallamothu</span> · <a href="https://github.com/pavanchow/quartermaster">github.com/pavanchow/quartermaster</a></p>
+</div></footer>
+
+<script>
+"use strict";
+// ---- A faithful in-browser port of the Rust resolver (src/*.rs) ----
+
+// ---------- Version ----------
+function parseVersion(s){
+  s=s.trim();
+  let pre=[], core=s;
+  const dash=s.indexOf('-');
+  if(dash>=0){core=s.slice(0,dash); const p=s.slice(dash+1); if(p==='') throw new Error(`version '${s}' has an empty prerelease`); pre=p.split('.');}
+  const parts=core.split('.');
+  if(parts.length!==3) throw new Error(`version '${s}' must be major.minor.patch`);
+  const nums=parts.map(p=>{ if(!/^\d+$/.test(p)) throw new Error(`version '${s}' has a non-numeric part`); return parseInt(p,10);});
+  return {major:nums[0],minor:nums[1],patch:nums[2],pre};
+}
+function cmpPre(a,b){
+  if(a.length===0&&b.length===0) return 0;
+  if(a.length===0) return 1;      // release > prerelease
+  if(b.length===0) return -1;
+  const n=Math.min(a.length,b.length);
+  for(let i=0;i<n;i++){
+    const x=a[i],y=b[i]; const nx=/^\d+$/.test(x),ny=/^\d+$/.test(y);
+    let o;
+    if(nx&&ny) o=Math.sign(parseInt(x)-parseInt(y));
+    else if(nx&&!ny) o=-1; else if(!nx&&ny) o=1; else o=(x<y?-1:x>y?1:0);
+    if(o!==0) return o;
+  }
+  return Math.sign(a.length-b.length);
+}
+function cmpVer(a,b){
+  return (a.major-b.major)||(a.minor-b.minor)||(a.patch-b.patch)||cmpPre(a.pre,b.pre);
+}
+function verStr(v){ return `${v.major}.${v.minor}.${v.patch}`+(v.pre.length?`-${v.pre.join('.')}`:''); }
+function isStable(v){ return v.pre.length===0; }
+
+// ---------- Cut & Range (interval-set algebra) ----------
+const NEG={k:0}, POS={k:2};
+const before=v=>({k:1,v,e:0}), after=v=>({k:1,v,e:1});
+function cutCmp(a,b){ if(a.k!==b.k) return a.k-b.k; if(a.k!==1) return 0; return cmpVer(a.v,b.v)||(a.e-b.e); }
+function R(segs){ return {segs}; }
+const Rany =()=>R([[NEG,POS]]);
+const Rexact=v=>R([[before(v),after(v)]]);
+const RatLeast=v=>R([[before(v),POS]]);
+const Rgreater=v=>R([[after(v),POS]]);
+const RatMost=v=>R([[NEG,after(v)]]);
+const Rless =v=>R([[NEG,before(v)]]);
+function Rbetween(lo,hi){ const l=before(lo),h=before(hi); return cutCmp(l,h)<0?R([[l,h]]):R([]);}
+function rContains(r,v){ const b=before(v),a=after(v); return r.segs.some(([lo,hi])=>cutCmp(lo,b)<=0&&cutCmp(a,hi)<=0); }
+function rEmpty(r){ return r.segs.length===0; }
+function rComplement(r){ const out=[]; let cur=NEG; for(const [lo,hi] of r.segs){ if(cutCmp(cur,lo)<0) out.push([cur,lo]); cur=hi;} if(cutCmp(cur,POS)<0) out.push([cur,POS]); return R(out);}
+function rUnion(a,b){ const all=[...a.segs,...b.segs].sort((x,y)=>cutCmp(x[0],y[0])); const out=[]; for(const [lo,hi] of all){ const last=out[out.length-1]; if(last&&cutCmp(lo,last[1])<=0){ if(cutCmp(hi,last[1])>0) last[1]=hi; } else out.push([lo,hi]); } return R(out);}
+function rIntersect(a,b){ const out=[]; let i=0,j=0; while(i<a.segs.length&&j<b.segs.length){ const [al,ah]=a.segs[i],[bl,bh]=b.segs[j]; const lo=cutCmp(al,bl)>=0?al:bl, hi=cutCmp(ah,bh)<=0?ah:bh; if(cutCmp(lo,hi)<0) out.push([lo,hi]); if(cutCmp(ah,bh)<=0) i++; else j++; } return R(out);}
+function rEq(a,b){ if(a.segs.length!==b.segs.length) return false; for(let i=0;i<a.segs.length;i++){ if(cutCmp(a.segs[i][0],b.segs[i][0])!==0||cutCmp(a.segs[i][1],b.segs[i][1])!==0) return false;} return true;}
+function segStr(lo,hi){
+  if(lo.k===1&&lo.e===0&&hi.k===1&&hi.e===1&&cmpVer(lo.v,hi.v)===0) return '='+verStr(lo.v);
+  const l = lo.k===0?null:(lo.e===0?'>='+verStr(lo.v):'>'+verStr(lo.v));
+  const h = hi.k===2?null:(hi.e===1?'<='+verStr(hi.v):'<'+verStr(hi.v));
+  if(l&&h) return l+', '+h; if(l) return l; if(h) return h; return '*';
+}
+function rStr(r){ if(r.segs.length===0) return '<nothing>'; if(r.segs.length===1&&r.segs[0][0].k===0&&r.segs[0][1].k===2) return '*'; return r.segs.map(([lo,hi])=>segStr(lo,hi)).join(' || ');}
+function rFriendly(r){
+  if(r.segs.length!==1) return rStr(r);
+  const [lo,hi]=r.segs[0];
+  if(lo.k===1&&lo.e===0&&hi.k===1&&hi.e===1&&cmpVer(lo.v,hi.v)===0) return verStr(lo.v);
+  if(lo.k===1&&lo.e===0&&hi.k===1&&hi.e===0&&isStable(lo.v)&&isStable(hi.v)){
+    const a=lo.v,b=hi.v;
+    const caret = a.major>0?{major:a.major+1,minor:0,patch:0,pre:[]}:a.minor>0?{major:0,minor:a.minor+1,patch:0,pre:[]}:{major:0,minor:0,patch:a.patch+1,pre:[]};
+    if(cmpVer(b,caret)===0) return '^'+verStr(a);
+    if(cmpVer(b,{major:a.major,minor:a.minor+1,patch:0,pre:[]})===0) return '~'+verStr(a);
+  }
+  return rStr(r);
+}
+
+// ---------- constraint parser ----------
+function parsePartial(s){ const parts=s.split('.'); if(!/^\d+$/.test(parts[0]||'')) throw new Error(`'${s}' has no major version`); const major=parseInt(parts[0]); const minor=parts[1]!==undefined?ck(parts[1],s):null; const patch=parts[2]!==undefined?ck(parts[2],s):null; if(parts.length>3) throw new Error(`'${s}' has too many parts`); return {major,minor,patch}; }
+function ck(p,s){ if(!/^\d+$/.test(p)) throw new Error(`'${s}' has a non-numeric part`); return parseInt(p); }
+function loose(s){ const p=parsePartial(s); return {major:p.major,minor:p.minor||0,patch:p.patch||0,pre:[]}; }
+function parseComparator(c){
+  if(c==='*'||c==='x'||c==='X') return RatLeast({major:0,minor:0,patch:0,pre:[]});
+  if(c.startsWith('>=')) return RatLeast(loose(c.slice(2)));
+  if(c.startsWith('<=')) return RatMost(loose(c.slice(2)));
+  if(c.startsWith('>'))  return Rgreater(loose(c.slice(1)));
+  if(c.startsWith('<'))  return Rless(loose(c.slice(1)));
+  if(c.startsWith('='))  return Rexact(loose(c.slice(1)));
+  if(c.startsWith('^')){ const p=parsePartial(c.slice(1)); const lo={major:p.major,minor:p.minor||0,patch:p.patch||0,pre:[]}; let hi; if(p.major>0) hi={major:p.major+1,minor:0,patch:0,pre:[]}; else if((p.minor||0)>0) hi={major:0,minor:p.minor+1,patch:0,pre:[]}; else hi={major:0,minor:0,patch:(p.patch||0)+1,pre:[]}; return Rbetween(lo,hi); }
+  if(c.startsWith('~')){ const p=parsePartial(c.slice(1)); const lo={major:p.major,minor:p.minor||0,patch:p.patch||0,pre:[]}; const hi=p.minor!==null?{major:p.major,minor:p.minor+1,patch:0,pre:[]}:{major:p.major+1,minor:0,patch:0,pre:[]}; return Rbetween(lo,hi); }
+  const p=parsePartial(c);
+  if(p.minor!==null&&p.patch!==null) return Rexact({major:p.major,minor:p.minor,patch:p.patch,pre:[]});
+  if(p.minor!==null) return Rbetween({major:p.major,minor:p.minor,patch:0,pre:[]},{major:p.major,minor:p.minor+1,patch:0,pre:[]});
+  return Rbetween({major:p.major,minor:0,patch:0,pre:[]},{major:p.major+1,minor:0,patch:0,pre:[]});
+}
+function parseRange(input){
+  input=input.trim(); if(!input) throw new Error('empty constraint');
+  let acc=null;
+  for(const alt of input.split('||')){
+    const toks=alt.replace(/,/g,' ').trim().split(/\s+/);
+    const comps=[]; for(let i=0;i<toks.length;i++){ const t=toks[i]; if(['>=','>','<=','<','='].includes(t)){ comps.push(t+toks[++i]); } else comps.push(t); }
+    let r=Rany(); for(const c of comps) r=rIntersect(r,parseComparator(c));
+    acc=acc?rUnion(acc,r):r;
+  }
+  return acc;
+}
+
+// ---------- Term ----------
+const Tpos=r=>({positive:true,range:r}), Tneg=r=>({positive:false,range:r}), Texact=v=>Tpos(Rexact(v));
+function tAllowed(t){ return t.positive?t.range:rComplement(t.range); }
+function tNegate(t){ return {positive:!t.positive,range:t.range}; }
+function tRelation(t,have){ const want=tAllowed(t); const inside=rIntersect(have,want); if(rEq(inside,have)) return 'sat'; if(rEmpty(inside)) return 'con'; return 'inc'; }
+
+// ---------- Registry ----------
+function parseRegistry(text){
+  const pkgs={}; let cur=null;
+  const flush=()=>{ if(cur){ (pkgs[cur.name]=pkgs[cur.name]||[]).push({version:cur.version,deps:cur.deps}); } };
+  text.split('\n').forEach((raw,i)=>{
+    const line=raw.split('#')[0]; if(!line.trim()) return;
+    const indented=/^\s/.test(line); const parts=line.trim().split(/\s+/);
+    if(indented){ const dep=parts[0]; const constraint=parts.slice(1).join(' '); if(!constraint) throw new Error(`line ${i+1}: '${dep}' has no constraint`); if(!cur) throw new Error(`line ${i+1}: dependency before any package`); cur.deps.push([dep,parseRange(constraint)]); }
+    else { flush(); cur={name:parts[0],version:parseVersion(parts[1]),deps:[]}; }
+  });
+  flush();
+  return {
+    versions:n=>(pkgs[n]||[]).map(p=>p.version),
+    dependencies:(n,v)=>{ const list=pkgs[n]; if(!list) return null; const f=list.find(p=>cmpVer(p.version,v)===0); return f?f.deps:null; }
+  };
+}
+function parseRequires(text){
+  const out=[];
+  text.split('\n').forEach(raw=>{ const line=raw.split('#')[0].trim(); if(!line) return; const parts=line.split(/\s+/); out.push([parts[0],parseRange(parts.slice(1).join(' '))]); });
+  return out;
+}
+
+// ---------- Solver (PubGrub) ----------
+const ROOT='@root';
+function solve(provider,rootDeps){
+  const incompats=[]; const index={}; const assignments=[]; let level=0;
+  const rootVer={major:1,minor:0,patch:0,pre:[]};
+  const add=(terms,cause)=>{ const id=incompats.length; for(const [p] of terms){ (index[p]=index[p]||[]).push(id);} incompats.push({terms,cause}); return id; };
+  const accFor=(pkg,upto)=>{ let acc=Rany(); for(let i=0;i<upto;i++){ const a=assignments[i]; if(a.package===pkg) acc=rIntersect(acc,tAllowed(a.term)); } return acc; };
+  const termFor=pkg=>accFor(pkg,assignments.length);
+  const decision=pkg=>{ const a=assignments.find(a=>a.decision&&a.package===pkg); return a?a.term.range.segs[0][0].v:null; };
+  const termOf=(inc,pkg)=>{ const f=inc.terms.find(([p])=>p===pkg); return f?f[1]:null; };
+  const isTerminal=inc=>inc.terms.length===0||(inc.terms.length===1&&inc.terms[0][0]===ROOT);
+
+  function evalInc(ci){ let inc=incompats[ci],unit=null,count=0;
+    for(const [pkg,term] of inc.terms){ const rel=tRelation(term,termFor(pkg)); if(rel==='sat'){} else if(rel==='con') return {t:'ignore'}; else {count++; unit=[pkg,term];} }
+    if(count===0) return {t:'conflict'}; if(count===1) return {t:'unit',pkg:unit[0],term:unit[1]}; return {t:'ignore'};
+  }
+  const derive=(pkg,term,cause)=>assignments.push({package:pkg,term,decision:false,level,cause});
+  const decide=(pkg,version)=>{ level++; assignments.push({package:pkg,term:Texact(version),decision:true,level,cause:null}); };
+  const backtrack=to=>{ for(let i=assignments.length-1;i>=0;i--) if(assignments[i].level>to) assignments.splice(i,1); level=to; };
+
+  function satisfierOf(pkg,term,upto){ let acc=Rany(); for(let i=0;i<upto;i++){ if(assignments[i].package===pkg){ acc=rIntersect(acc,tAllowed(assignments[i].term)); if(tRelation(term,acc)==='sat') return i; } } return -1; }
+  function analyze(ci){ const terms=incompats[ci].terms; const n=assignments.length; let sat=0;
+    for(const [pkg,term] of terms){ const idx=satisfierOf(pkg,term,n); if(idx>sat) sat=idx; }
+    const satPkg=assignments[sat].package; let prev=1;
+    for(const [pkg,term] of terms){ if(pkg===satPkg){ const j=satisfierOf(pkg,term,sat); if(j>=0) prev=Math.max(prev,assignments[j].level);} else { const idx=satisfierOf(pkg,term,n); if(idx>=0) prev=Math.max(prev,assignments[idx].level);} }
+    return [sat,prev];
+  }
+  function resolveInc(ci,cause,pkg){
+    const merged=[]; const push=(q,t)=>{ if(q===pkg) return; const slot=merged.find(m=>m[0]===q); if(slot){ slot[1]=Tpos(rIntersect(tAllowed(slot[1]),tAllowed(t))); } else merged.push([q,t]); };
+    for(const [q,t] of incompats[ci].terms) push(q,t);
+    for(const [q,t] of incompats[cause].terms) push(q,t);
+    const cp=termOf(incompats[ci],pkg), dp=termOf(incompats[cause],pkg);
+    let combined=null; if(cp&&dp) combined=rUnion(tAllowed(cp),tAllowed(dp)); else if(cp) combined=tAllowed(cp); else if(dp) combined=tAllowed(dp);
+    if(combined&&!rEmpty(rComplement(combined))) merged.push([pkg,Tpos(combined)]);
+    return add(merged,{kind:'derived',a:ci,b:cause});
+  }
+  function conflictResolution(ci){
+    for(;;){ if(isTerminal(incompats[ci])) return {t:'nosolution',id:ci};
+      const [sat,prev]=analyze(ci); const a=assignments[sat];
+      if(a.decision||prev!==a.level){ backtrack(prev); return {t:'learned',pkg:a.package}; }
+      ci=resolveInc(ci,a.cause,a.package);
+    }
+  }
+  function requiredUndecided(){ const seen=[]; for(const a of assignments){ if(a.term.positive&&a.package!==ROOT&&!seen.includes(a.package)) seen.push(a.package);} return seen.filter(p=>decision(p)===null); }
+  function chooseVersion(pkg,allowed){ let m=provider.versions(pkg).filter(v=>rContains(allowed,v)).sort(cmpVer); const stable=m.filter(isStable); if(stable.length) return stable[stable.length-1]; return m.length?m[m.length-1]:null; }
+  function chooseCount(pkg){ const a=termFor(pkg); return provider.versions(pkg).filter(v=>rContains(a,v)).length; }
+
+  for(const [dep,r] of rootDeps) add([[ROOT,Texact(rootVer)],[dep,Tneg(r)]],{kind:'dep',package:ROOT,version:'1.0.0',dep});
+  decide(ROOT,rootVer);
+  let changed=[ROOT], guard=0;
+  for(;;){ if(++guard>500000) throw new Error('resolver did not terminate');
+    while(changed.length){ const pkg=changed.pop(); const ids=(index[pkg]||[]).slice();
+      for(const ci of ids){ const e=evalInc(ci);
+        if(e.t==='conflict'){ const c=conflictResolution(ci); if(c.t==='nosolution') return {conflict:c.id,incompats}; changed=[c.pkg]; break; }
+        else if(e.t==='unit'){ derive(e.pkg,tNegate(e.term),ci); changed.push(e.pkg); }
+      }
+    }
+    let cands=requiredUndecided();
+    if(!cands.length){ const map={}; for(const a of assignments){ if(a.decision&&a.package!==ROOT) map[a.package]=a.term.range.segs[0][0].v; } return {ok:map}; }
+    cands.sort((x,y)=>chooseCount(x)-chooseCount(y));
+    const pkg=cands[0]; const allowed=termFor(pkg); const ver=chooseVersion(pkg,allowed);
+    if(!ver){ add([[pkg,Tpos(allowed)]],{kind:'noversions',package:pkg}); changed=[pkg]; }
+    else { const deps=provider.dependencies(pkg,ver)||[]; for(const [dep,r] of deps) add([[pkg,Texact(ver)],[dep,Tneg(r)]],{kind:'dep',package:pkg,version:verStr(ver),dep}); decide(pkg,ver); changed=[pkg]; }
+  }
+}
+
+// ---------- explanation ----------
+function report(incompats,terminal){
+  const lines=[];
+  const depRange=(inc,dep)=>{ const f=inc.terms.find(([p])=>p===dep); return f?rFriendly(f[1].range):'*'; };
+  function describe(id){ const inc=incompats[id],c=inc.cause;
+    if(c.kind==='dep'){ const r=depRange(inc,c.dep); return c.package===ROOT?`the project depends on \u0001${c.dep} ${r}\u0002`:`\u0001${c.package} ${c.version}\u0002 depends on \u0001${c.dep} ${r}\u0002`; }
+    if(c.kind==='noversions'){ const f=inc.terms.find(([p])=>p===c.package); return `no version of \u0001${c.package}\u0002 matches ${f?rFriendly(tAllowed(f[1])):'*'}`; }
+    if(c.kind==='root') return 'the project is being installed';
+    return generic(inc);
+  }
+  function generic(inc){ if(inc.terms.length===1&&inc.terms[0][0]===ROOT) return `the project's requirements are contradictory`;
+    const parts=inc.terms.filter(([p])=>p!==ROOT).map(([p,t])=>t.positive?`\u0001${p} ${rFriendly(t.range)}\u0002`:`\u0001${p}\u0002 outside ${rFriendly(t.range)}`);
+    if(parts.length===0) return 'the requirements conflict'; if(parts.length===1) return `${parts[0]} cannot be used`; return `${parts.join(' and ')} cannot be chosen together`;
+  }
+  function visit(id){ const c=incompats[id].cause;
+    if(c.kind==='derived'){ const pa=visit(c.a),pb=visit(c.b),concl=describe(id); lines.push(`Because ${pa} and ${pb}, ${concl}.`); return concl; }
+    return describe(id);
+  }
+  visit(terminal);
+  lines.push(`So the project's dependencies cannot be satisfied.`);
+  return lines;
+}
+
+// ---------- tree render ----------
+function renderTree(reqs,map,provider){
+  const lines=[]; const direct=reqs.map(r=>r[0]).sort(); const seen=new Set();
+  function walk(name,prefix,last){ const branch=last?'└─ ':'├─ '; const v=map[name]?verStr(map[name]):'?'; const rep=seen.has(name);
+    lines.push(`${prefix}${branch}${name} ${v}${rep?' (*)':''}`); if(rep) return; seen.add(name);
+    const ver=map[name]; if(!ver) return; let deps=(provider.dependencies(name,ver)||[]).slice().sort((a,b)=>a[0]<b[0]?-1:1);
+    const cp=prefix+(last?'   ':'│  ');
+    deps.forEach((d,i)=>walk(d[0],cp,i+1===deps.length));
+  }
+  direct.forEach((d,i)=>walk(d,'',i+1===direct.length));
+  return lines.join('\n');
+}
+
+// ---------- UI ----------
+const PRESETS={
+  ok:{req:"web ^1.0\njson ^1.2",reg:"web 1.0.0\n  http ^1.0\n  json ^1.2\nweb 1.1.0\n  http ^1.2\n  json ^1.2\nhttp 1.0.0\n  bytes ^1.0\nhttp 1.2.0\n  bytes ^1.1\nhttp 1.3.0\n  bytes ^1.1\njson 1.2.0\n  bytes ^1.0\njson 1.3.0\n  bytes ^1.1\nbytes 1.0.0\nbytes 1.1.0\nbytes 1.1.5"},
+  bad:{req:"http ^1.2\nbytes =1.0.0",reg:"http 1.2.0\n  bytes ^1.1\nhttp 1.3.0\n  bytes ^1.1\nbytes 1.0.0\nbytes 1.1.0\nbytes 1.1.5"},
+  diamond:{req:"foo ^1.0\nbar ^1.0",reg:"foo 1.0.0\n  shared ^1.0\nbar 1.0.0\n  shared ^2.0\nshared 1.0.0\nshared 2.0.0"}
+};
+const $=id=>document.getElementById(id);
+function load(name){ $('req').value=PRESETS[name].req; $('reg').value=PRESETS[name].reg; run(); }
+function esc(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function run(){
+  const out=$('out');
+  let provider,reqs;
+  try{ provider=parseRegistry($('reg').value); reqs=parseRequires($('req').value); }
+  catch(e){ out.innerHTML=`<div class="verdict bad">input error</div><div>${esc(e.message)}</div>`; return; }
+  let res; try{ res=solve(provider,reqs); }catch(e){ out.innerHTML=`<div class="verdict bad">error</div><div>${esc(e.message)}</div>`; return; }
+  if(res.ok){
+    const names=Object.keys(res.ok).sort();
+    const pins=names.map(n=>`  ${n} <span class="v">${verStr(res.ok[n])}</span>`).join('<br>');
+    out.innerHTML=`<div class="verdict ok">✓ resolved — ${names.length} package${names.length===1?'':'s'} pinned</div>`+
+      `<div class="pins">${pins}</div>`+
+      `<div class="tree">${esc(renderTree(reqs,res.ok,provider))}</div>`;
+  } else {
+    const lines=report(res.incompats,res.conflict);
+    out.innerHTML=`<div class="verdict bad">✗ no solution — here is why</div>`+
+      `<ol class="proof">`+lines.map(l=>`<li>${esc(l).replace(//g,'<b>').replace(//g,'</b>')}</li>`).join('')+`</ol>`;
+  }
+}
+document.querySelectorAll('.chip[data-preset]').forEach(c=>c.onclick=()=>load(c.dataset.preset));
+$('run').onclick=run;
+load('ok');
+</script>
 </body>
 </html>
