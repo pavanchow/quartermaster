@@ -298,7 +298,18 @@ function parseRange(input){
 const Tpos=r=>({positive:true,range:r}), Tneg=r=>({positive:false,range:r}), Texact=v=>Tpos(Rexact(v));
 function tAllowed(t){ return t.positive?t.range:rComplement(t.range); }
 function tNegate(t){ return {positive:!t.positive,range:t.range}; }
-function tRelation(t,have){ const want=tAllowed(t); const inside=rIntersect(have,want); if(rEq(inside,have)) return 'sat'; if(rEmpty(inside)) return 'con'; return 'inc'; }
+// Signed set-algebra over package states: a concrete version, or the package
+// being absent. Tracking absence is what keeps the collapse to a bare version
+// range from silently dropping "this package must be present".
+const tCoversAbsent=t=>!t.positive;
+const tFromParts=(versions,absent)=>absent?Tneg(rComplement(versions)):Tpos(versions);
+const tIntersect=(a,b)=>tFromParts(rIntersect(tAllowed(a),tAllowed(b)), tCoversAbsent(a)&&tCoversAbsent(b));
+const tUnion=(a,b)=>tFromParts(rUnion(tAllowed(a),tAllowed(b)), tCoversAbsent(a)||tCoversAbsent(b));
+const tIsUniversal=t=>tCoversAbsent(t)&&rEmpty(rComplement(tAllowed(t)));
+const tIsEmptyState=t=>t.positive&&rEmpty(t.range);
+const tAnyState=()=>Tneg(R([]));
+const tSubsetOf=(a,b)=>(tCoversAbsent(b)||!tCoversAbsent(a))&&rEq(rIntersect(tAllowed(a),tAllowed(b)),tAllowed(a));
+function tRelationTo(t,acc){ if(tSubsetOf(acc,t)) return 'sat'; if(tIsEmptyState(tIntersect(acc,t))) return 'con'; return 'inc'; }
 
 // ---------- Registry ----------
 function parseRegistry(text){
@@ -328,44 +339,52 @@ function solve(provider,rootDeps){
   const incompats=[]; const index={}; const assignments=[]; let level=0;
   const rootVer={major:1,minor:0,patch:0,pre:[]};
   const add=(terms,cause)=>{ const id=incompats.length; for(const [p] of terms){ (index[p]=index[p]||[]).push(id);} incompats.push({terms,cause}); return id; };
-  const accFor=(pkg,upto)=>{ let acc=Rany(); for(let i=0;i<upto;i++){ const a=assignments[i]; if(a.package===pkg) acc=rIntersect(acc,tAllowed(a.term)); } return acc; };
-  const termFor=pkg=>accFor(pkg,assignments.length);
+  const stateFor=(pkg,upto)=>{ let acc=tAnyState(); for(let i=0;i<upto;i++){ const a=assignments[i]; if(a.package===pkg) acc=tIntersect(acc,a.term); } return acc; };
+  const termFor=pkg=>tAllowed(stateFor(pkg,assignments.length));
   const decision=pkg=>{ const a=assignments.find(a=>a.decision&&a.package===pkg); return a?a.term.range.segs[0][0].v:null; };
-  const termOf=(inc,pkg)=>{ const f=inc.terms.find(([p])=>p===pkg); return f?f[1]:null; };
   const isTerminal=inc=>inc.terms.length===0||(inc.terms.length===1&&inc.terms[0][0]===ROOT);
 
   function evalInc(ci){ let inc=incompats[ci],unit=null,count=0;
-    for(const [pkg,term] of inc.terms){ const rel=tRelation(term,termFor(pkg)); if(rel==='sat'){} else if(rel==='con') return {t:'ignore'}; else {count++; unit=[pkg,term];} }
+    for(const [pkg,term] of inc.terms){ const rel=tRelationTo(term,stateFor(pkg,assignments.length)); if(rel==='sat'){} else if(rel==='con') return {t:'ignore'}; else {count++; unit=[pkg,term];} }
     if(count===0) return {t:'conflict'}; if(count===1) return {t:'unit',pkg:unit[0],term:unit[1]}; return {t:'ignore'};
   }
   const derive=(pkg,term,cause)=>assignments.push({package:pkg,term,decision:false,level,cause});
   const decide=(pkg,version)=>{ level++; assignments.push({package:pkg,term:Texact(version),decision:true,level,cause:null}); };
   const backtrack=to=>{ for(let i=assignments.length-1;i>=0;i--) if(assignments[i].level>to) assignments.splice(i,1); level=to; };
 
-  function satisfierOf(pkg,term,upto){ let acc=Rany(); for(let i=0;i<upto;i++){ if(assignments[i].package===pkg){ acc=rIntersect(acc,tAllowed(assignments[i].term)); if(tRelation(term,acc)==='sat') return i; } } return -1; }
-  function analyze(ci){ const terms=incompats[ci].terms; const n=assignments.length; let sat=0;
-    for(const [pkg,term] of terms){ const idx=satisfierOf(pkg,term,n); if(idx>sat) sat=idx; }
-    const satPkg=assignments[sat].package; let prev=1;
-    for(const [pkg,term] of terms){ if(pkg===satPkg){ const j=satisfierOf(pkg,term,sat); if(j>=0) prev=Math.max(prev,assignments[j].level);} else { const idx=satisfierOf(pkg,term,n); if(idx>=0) prev=Math.max(prev,assignments[idx].level);} }
-    return [sat,prev];
-  }
-  function resolveInc(ci,cause,pkg){
-    const merged=[]; const push=(q,t)=>{ if(q===pkg) return; const slot=merged.find(m=>m[0]===q); if(slot){ slot[1]=Tpos(rIntersect(tAllowed(slot[1]),tAllowed(t))); } else merged.push([q,t]); };
-    for(const [q,t] of incompats[ci].terms) push(q,t);
-    for(const [q,t] of incompats[cause].terms) push(q,t);
-    const cp=termOf(incompats[ci],pkg), dp=termOf(incompats[cause],pkg);
-    let combined=null; if(cp&&dp) combined=rUnion(tAllowed(cp),tAllowed(dp)); else if(cp) combined=tAllowed(cp); else if(dp) combined=tAllowed(dp);
-    if(combined&&!rEmpty(rComplement(combined))) merged.push([pkg,Tpos(combined)]);
+  function satisfierOf(pkg,term,upto){ let acc=tAnyState(); for(let i=0;i<upto;i++){ if(assignments[i].package===pkg){ acc=tIntersect(acc,assignments[i].term); if(tRelationTo(term,acc)==='sat') return i; } } return -1; }
+  // Merge the conflict and its satisfier's cause, eliminating the resolution
+  // package P; keep P (as the signed union of its two terms) unless that union
+  // is universal (absence plus every version).
+  function buildPriorCause(ci,terms,satPos,cause){
+    const pPkg=terms[satPos][0], t1=terms[satPos][1];
+    const cf=incompats[cause].terms.find(([q])=>q===pPkg);
+    const shared=tUnion(t1, cf?cf[1]:Tpos(R([])));
+    const keep=!tIsUniversal(shared);
+    const merged=[];
+    const addT=(q,t)=>{ const slot=merged.find(m=>m[0]===q); if(slot) slot[1]=tIntersect(slot[1],t); else merged.push([q,t]); };
+    terms.forEach(([q,t],k)=>{ if(k!==satPos) addT(q,t); });
+    for(const [q,t] of incompats[cause].terms){ if(q!==pPkg) addT(q,t); }
+    if(keep) addT(pPkg,shared);
     return add(merged,{kind:'derived',a:ci,b:cause});
   }
   function conflictResolution(ci){
     for(;;){ if(isTerminal(incompats[ci])) return {t:'nosolution',id:ci};
-      const [sat,prev]=analyze(ci); const a=assignments[sat];
-      if(a.decision||prev!==a.level){ backtrack(prev); return {t:'learned',pkg:a.package}; }
-      ci=resolveInc(ci,a.cause,a.package);
+      const terms=incompats[ci].terms.slice(); const n=assignments.length;
+      let satIndex=0, satPos=0;
+      for(let k=0;k<terms.length;k++){ const i=satisfierOf(terms[k][0],terms[k][1],n); if(i>=satIndex){ satIndex=i; satPos=k; } }
+      const a=assignments[satIndex];
+      let prev=1;
+      for(let k=0;k<terms.length;k++){ if(k===satPos) continue; const i=satisfierOf(terms[k][0],terms[k][1],n); prev=Math.max(prev,assignments[i].level); }
+      if(a.decision||prev<a.level){ backtrack(prev); return {t:'learned',pkg:terms[satPos][0]}; }
+      ci=buildPriorCause(ci,terms,satPos,a.cause);
     }
   }
-  function requiredUndecided(){ const seen=[]; for(const a of assignments){ if(a.term.positive&&a.package!==ROOT&&!seen.includes(a.package)) seen.push(a.package);} return seen.filter(p=>decision(p)===null); }
+  function requiredUndecided(){ const seen=[];
+    for(const a of assignments){ if(a.term.positive&&a.package!==ROOT&&!seen.includes(a.package)) seen.push(a.package); }
+    for(const inc of incompats){ const c=inc.cause; if(c.kind==='dep'){ const d=decision(c.package); if(d!==null&&verStr(d)===c.version&&!seen.includes(c.dep)) seen.push(c.dep); } }
+    return seen.filter(p=>decision(p)===null&&!rEmpty(termFor(p)));
+  }
   function chooseVersion(pkg,allowed){ let m=provider.versions(pkg).filter(v=>rContains(allowed,v)).sort(cmpVer); const stable=m.filter(isStable); if(stable.length) return stable[stable.length-1]; return m.length?m[m.length-1]:null; }
   function chooseCount(pkg){ const a=termFor(pkg); return provider.versions(pkg).filter(v=>rContains(a,v)).length; }
 
