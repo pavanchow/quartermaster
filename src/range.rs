@@ -260,6 +260,7 @@ struct Partial {
 }
 
 fn parse_partial(s: &str) -> Result<Partial> {
+    let s = s.trim().trim_end_matches('.');
     let mut it = s.split('.');
     let num = |o: Option<&str>, what: &str| -> Result<Option<u64>> {
         match o {

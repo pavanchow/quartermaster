@@ -23,10 +23,14 @@ impl Version {
     }
 
     pub fn parse(s: &str) -> Result<Version> {
+        let s = s.trim();
         let (core, pre) = match s.split_once('-') {
             Some((c, p)) => (c, Some(p)),
             None => (s, None),
         };
+        // Tolerate a trailing dot (`1.2.3.` is an unambiguous typo for `1.2.3`);
+        // genuine over-specification like `1.2.3.4` still errors below.
+        let core = core.trim_end_matches('.');
         let mut it = core.split('.');
         let mut num = |what: &str| -> Result<u64> {
             let part = it

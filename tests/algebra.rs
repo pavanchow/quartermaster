@@ -25,9 +25,17 @@ fn version_parse_and_order() {
 #[test]
 fn version_rejects_garbage() {
     assert!(Version::parse("1.0").is_err());
-    assert!(Version::parse("1.0.0.0").is_err());
+    assert!(Version::parse("1.0.0.0").is_err()); // genuine over-specification
     assert!(Version::parse("x.0.0").is_err());
     assert!(Version::parse("1.0.0-").is_err());
+}
+
+#[test]
+fn version_tolerates_a_trailing_dot() {
+    // A stray trailing dot (`1.1.5.`) is an unambiguous typo, not an error.
+    assert_eq!(Version::parse("1.1.5.").unwrap(), v("1.1.5"));
+    assert_eq!(Version::parse("  2.0.0  ").unwrap(), v("2.0.0"));
+    assert!(r("^1.2.").contains(&v("1.5.0"))); // and in constraints
 }
 
 #[test]

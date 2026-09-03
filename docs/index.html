@@ -200,6 +200,7 @@ function parseVersion(s){
   let pre=[], core=s;
   const dash=s.indexOf('-');
   if(dash>=0){core=s.slice(0,dash); const p=s.slice(dash+1); if(p==='') throw new Error(`version '${s}' has an empty prerelease`); pre=p.split('.');}
+  core=core.replace(/\.+$/,'');
   const parts=core.split('.');
   if(parts.length!==3) throw new Error(`version '${s}' must be major.minor.patch`);
   const nums=parts.map(p=>{ if(!/^\d+$/.test(p)) throw new Error(`version '${s}' has a non-numeric part`); return parseInt(p,10);});
@@ -264,7 +265,7 @@ function rFriendly(r){
 }
 
 // ---------- constraint parser ----------
-function parsePartial(s){ const parts=s.split('.'); if(!/^\d+$/.test(parts[0]||'')) throw new Error(`'${s}' has no major version`); const major=parseInt(parts[0]); const minor=parts[1]!==undefined?ck(parts[1],s):null; const patch=parts[2]!==undefined?ck(parts[2],s):null; if(parts.length>3) throw new Error(`'${s}' has too many parts`); return {major,minor,patch}; }
+function parsePartial(s){ s=s.trim().replace(/\.+$/,''); const parts=s.split('.'); if(!/^\d+$/.test(parts[0]||'')) throw new Error(`'${s}' has no major version`); const major=parseInt(parts[0]); const minor=parts[1]!==undefined?ck(parts[1],s):null; const patch=parts[2]!==undefined?ck(parts[2],s):null; if(parts.length>3) throw new Error(`'${s}' has too many parts`); return {major,minor,patch}; }
 function ck(p,s){ if(!/^\d+$/.test(p)) throw new Error(`'${s}' has a non-numeric part`); return parseInt(p); }
 function loose(s){ const p=parsePartial(s); return {major:p.major,minor:p.minor||0,patch:p.patch||0,pre:[]}; }
 function parseComparator(c){
