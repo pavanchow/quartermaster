@@ -108,3 +108,38 @@ fn prefers_stable_over_prerelease() {
     // ^1 excludes 2.0.0-rc.1 anyway; use * to prove the preference.
     assert_eq!(solved(&r, &[("foo", "*")]), vec![("foo".into(), "1.0.0".into())]);
 }
+
+// ---- soundness regressions (found by differential fuzzing vs a SAT oracle) ----
+
+#[test]
+fn negative_derivation_does_not_drop_a_required_dependency() {
+    // `b 1.0.0` needs `c >=1.1` (none exists), forcing `b 0.1.0`, whose own
+    // dependency `c <2.0` was already set-satisfied by the learned "c has no
+    // version >=1.1". `c` must still be selected, not silently dropped.
+    let r = reg("b 1.0.0\n  c >=1.1\nb 0.1.0\n  c <2.0\nc 1.0.0");
+    let s = solved(&r, &[("b", "<2.0")]);
+    assert!(s.contains(&("b".into(), "0.1.0".into())), "got {s:?}");
+    assert!(s.contains(&("c".into(), "1.0.0".into())), "c must be resolved, got {s:?}");
+}
+
+#[test]
+fn does_not_falsely_report_unsat_when_an_alternate_branch_solves() {
+    // The `a 1.2.0` / `a 1.0.0` branches lead to a dead `d` subtree; the resolver
+    // must fall back to `a 0.2.0 -> c 1.0.0`, not wrongly prove no solution.
+    let r = reg(
+        "a 1.2.0\n  d <2.0\na 1.0.0\n  d 1.0.0\n  b ^0.1\na 0.2.0\n  c ^1.0\n\
+         b 2.0.0\n  d 1.0.0\nb 1.0.0\nc 1.0.0\nc 1.2.0\n  d >=1.1\n\
+         c 1.1.0\n  a ^1.0\n  a ^1.1\nd 1.0.0\n  a ^0.1\nd 2.0.0\n  b ^1.1",
+    );
+    let s = solved(&r, &[("a", "<2.0")]);
+    assert!(s.contains(&("a".into(), "0.2.0".into())), "got {s:?}");
+    assert!(s.contains(&("c".into(), "1.0.0".into())), "got {s:?}");
+}
+
+#[test]
+fn one_package_two_constraints_from_one_version() {
+    // A single package version may list the same dependency twice; the resolver
+    // must intersect both constraints.
+    let r = reg("app 1.0.0\n  lib ^1.0\n  lib >=1.2\nlib 1.1.0\nlib 1.3.0");
+    assert!(solved(&r, &[("app", "^1.0")]).contains(&("lib".into(), "1.3.0".into())));
+}

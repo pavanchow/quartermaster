@@ -63,21 +63,37 @@ fn main() {
     }
 }
 
-/// Pull `--flag value` (or `-short value`) out of the args, returning the value.
+/// The flags that take a following value. Anything else starting with `-` is a
+/// boolean or unknown flag and does NOT consume the next argument, so it cannot
+/// swallow a positional (e.g. the manifest path).
+const VALUE_FLAGS: &[&str] = &["--registry", "-r", "--out", "-o", "--to", "-t"];
+
+/// Pull `--flag value`, `-short value`, or `--flag=value` out of the args.
 fn take_opt(args: &[String], long: &str, short: &str) -> Option<String> {
-    args.iter()
-        .position(|a| a == long || a == short)
-        .and_then(|i| args.get(i + 1).cloned())
+    for (i, a) in args.iter().enumerate() {
+        if a == long || a == short {
+            return args.get(i + 1).cloned();
+        }
+        if let Some(v) = a.strip_prefix(&format!("{long}=")) {
+            return Some(v.to_string());
+        }
+    }
+    None
 }
 
 fn positional(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < args.len() {
-        if args[i].starts_with('-') {
-            i += 2; // skip flag and its value
+        let a = &args[i];
+        if a.starts_with('-') {
+            if VALUE_FLAGS.contains(&a.as_str()) {
+                i += 2; // known value-taking flag consumes its value
+            } else {
+                i += 1; // boolean/unknown/`--key=value` flag consumes only itself
+            }
         } else {
-            out.push(args[i].clone());
+            out.push(a.clone());
             i += 1;
         }
     }

@@ -45,7 +45,13 @@ Resolution stops when it derives an incompatibility that is *terminal*: no terms
 
 ## Version selection policy
 
-Given a package and the set of versions still allowed, the solver picks the highest **stable** version, and only falls back to a prerelease when no stable version is in range. This keeps prereleases out of a solution unless a constraint explicitly reaches for one, without threading semver's prerelease-visibility rules through the whole range algebra — the policy lives in one function, not in the set operations.
+Given a package and the set of versions still allowed, the solver picks the highest **stable** version, and only falls back to a prerelease when no stable version is in range. This keeps prereleases out of a solution unless a constraint explicitly reaches for one, without threading semver's prerelease-visibility rules through the whole range algebra. The policy lives in one function, not in the set operations.
+
+One deliberate deviation from npm here: range **membership** of a prerelease follows the total version order (a prerelease sits just below its release), rather than npm's stricter rule that a comparator only admits a prerelease when it names the same `major.minor.patch`. So `^1.0` can match `1.5.0-rc.1` if that is the only version published. Combined with the prefer-stable heuristic this rarely surfaces, and it keeps the range algebra small and total. Full npm prerelease visibility is a non-goal.
+
+## Correctness
+
+The resolver is checked by differential fuzzing, not just examples. A harness generates hundreds of thousands of random small package universes and cross-checks Quartermaster against an independent brute-force satisfiability oracle, and separately validates that every returned assignment actually satisfies every constraint. Three classes are asserted: never an invalid pin set, never a false "solved" on an unsatisfiable input, and never a false "no solution" on a satisfiable one. The unit and integration tests pin the specific edge cases that fuzzing first surfaced (a negative derivation that must not drop a required dependency, and a dead subtree that must not be mistaken for global unsatisfiability).
 
 ## Non-goals
 

@@ -105,3 +105,11 @@ fn friendly_round_trips_common_shapes() {
     assert_eq!(r("~1.2.0").friendly(), "~1.2.0");
     assert_eq!(r("=1.0.0").friendly(), "1.0.0");
 }
+
+#[test]
+fn huge_version_part_errors_instead_of_panicking() {
+    // A `+1` on the caret/tilde/x-range upper bound must not overflow u64.
+    assert!(range::parse("^18446744073709551615").is_err());
+    assert!(range::parse("~1.18446744073709551615").is_err());
+    assert!(range::parse("18446744073709551615").is_err());
+}

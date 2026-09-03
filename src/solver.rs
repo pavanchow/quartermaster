@@ -86,15 +86,17 @@ impl<'a> Solver<'a> {
 
     /// Versions still possible for `pkg` given everything derived so far.
     fn term_for(&self, pkg: &str) -> Range {
-        self.acc_for(pkg, self.assignments.len())
+        self.state_for(pkg, self.assignments.len()).allowed()
     }
 
-    /// Accumulated allowed set for `pkg` over the first `upto` assignments.
-    fn acc_for(&self, pkg: &str, upto: usize) -> Range {
-        let mut acc = Range::any();
+    /// Accumulated per-package *state* for `pkg` over the first `upto`
+    /// assignments: a signed term that, unlike a bare version range, remembers
+    /// whether the package may still be absent.
+    fn state_for(&self, pkg: &str, upto: usize) -> Term {
+        let mut acc = Term::any_state();
         for a in &self.assignments[..upto] {
             if a.package == pkg {
-                acc = acc.intersect(&a.term.allowed());
+                acc = acc.intersect(&a.term);
             }
         }
         acc
@@ -111,8 +113,8 @@ impl<'a> Solver<'a> {
         let mut inconclusive: Option<(String, Term)> = None;
         let mut count = 0;
         for (pkg, term) in &self.incompats[ci].terms {
-            let have = self.term_for(pkg);
-            match term.relation(&have) {
+            let have = self.state_for(pkg, self.assignments.len());
+            match term.relation_to(&have) {
                 Relation::Satisfied => {}
                 Relation::Contradicted => return Eval::Ignore,
                 Relation::Inconclusive => {
@@ -157,14 +159,14 @@ impl<'a> Solver<'a> {
         self.level = to_level;
     }
 
-    /// Smallest index `i < upto` at which `pkg`'s accumulated set first
+    /// Smallest index `i < upto` at which `pkg`'s accumulated state first
     /// satisfies `term`, scanning only `pkg`'s assignments.
     fn satisfier_of(&self, pkg: &str, term: &Term, upto: usize) -> Option<usize> {
-        let mut acc = Range::any();
+        let mut acc = Term::any_state();
         for i in 0..upto {
             if self.assignments[i].package == pkg {
-                acc = acc.intersect(&self.assignments[i].term.allowed());
-                if term.relation(&acc) == Relation::Satisfied {
+                acc = acc.intersect(&self.assignments[i].term);
+                if term.relation_to(&acc) == Relation::Satisfied {
                     return Some(i);
                 }
             }
@@ -172,91 +174,118 @@ impl<'a> Solver<'a> {
         None
     }
 
-    /// Locate the assignment that completes a satisfied incompatibility, and the
-    /// decision level to backjump to (the level at which every *other* term is
-    /// already satisfied, leaving the satisfier's term as the lone unit).
-    fn analyze(&self, ci: IncompatId) -> (usize, usize) {
-        let terms = self.incompats[ci].terms.clone();
-        let n = self.assignments.len();
-        let mut sat_index = 0;
-        for (pkg, term) in &terms {
-            if let Some(idx) = self.satisfier_of(pkg, term, n) {
-                sat_index = sat_index.max(idx);
-            }
-        }
-        let satisfier_pkg = self.assignments[sat_index].package.clone();
-        let mut prev = 1usize;
-        for (pkg, term) in &terms {
-            if *pkg == satisfier_pkg {
-                if let Some(j) = self.satisfier_of(pkg, term, sat_index) {
-                    prev = prev.max(self.assignments[j].level);
-                }
-            } else if let Some(idx) = self.satisfier_of(pkg, term, n) {
-                prev = prev.max(self.assignments[idx].level);
-            }
-        }
-        (sat_index, prev)
-    }
-
-    /// Resolve `ci` against the cause of its satisfier on `pkg`, learning a new
-    /// incompatibility with `pkg` eliminated (its two terms unioned; dropped if
-    /// that covers every version).
-    fn resolve_incompat(&mut self, ci: IncompatId, cause: IncompatId, pkg: &str) -> IncompatId {
-        let mut merged: Vec<(String, Term)> = Vec::new();
-        let mut push = |q: &str, t: &Term| {
-            if q == pkg {
-                return;
-            }
-            if let Some(slot) = merged.iter_mut().find(|(p, _)| p == q) {
-                let both = slot.1.allowed().intersect(&t.allowed());
-                slot.1 = Term::positive(both);
-            } else {
-                merged.push((q.to_string(), t.clone()));
-            }
-        };
-        for (q, t) in &self.incompats[ci].terms {
-            push(q, t);
-        }
-        for (q, t) in &self.incompats[cause].terms {
-            push(q, t);
-        }
-        // Union the two terms for the eliminated package; keep it only if the
-        // union is not "every version" (which would make it vacuous).
-        let cp = self.incompats[ci].term_for(pkg).map(|t| t.allowed());
-        let dp = self.incompats[cause].term_for(pkg).map(|t| t.allowed());
-        let combined = match (cp, dp) {
-            (Some(a), Some(b)) => Some(a.union(&b)),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
-        if let Some(u) = combined {
-            if !u.complement().is_empty() {
-                merged.push((pkg.to_string(), Term::positive(u)));
-            }
-        }
-        self.add_incompat(merged, Cause::Derived(ci, cause))
-    }
-
+    /// PubGrub conflict resolution. From a satisfied (conflicting)
+    /// incompatibility, walk back by resolving it against the causes of its
+    /// satisfiers until it becomes unit at an earlier level, then backjump
+    /// there. If it reduces to the project's own requirements, there is no
+    /// solution.
     fn conflict_resolution(&mut self, mut ci: IncompatId) -> Conflict {
         loop {
             if self.incompats[ci].is_terminal(ROOT) {
                 return Conflict::NoSolution(ci);
             }
-            let (sat_index, prev_level) = self.analyze(ci);
+            let terms = self.incompats[ci].terms.clone();
+            let n = self.assignments.len();
+
+            // The most recent satisfier: the term whose satisfying assignment
+            // comes latest. That assignment is what we resolve away.
+            let mut sat_index = 0usize;
+            let mut sat_pos = 0usize;
+            for (k, (pkg, term)) in terms.iter().enumerate() {
+                let i = self
+                    .satisfier_of(pkg, term, n)
+                    .expect("a satisfied incompatibility has a satisfier for every term");
+                if i >= sat_index {
+                    sat_index = i;
+                    sat_pos = k;
+                }
+            }
+            let p_pkg = terms[sat_pos].0.clone();
             let sat = &self.assignments[sat_index];
-            let sat_pkg = sat.package.clone();
             let sat_level = sat.level;
             let sat_is_decision = sat.decision;
-            if sat_is_decision || prev_level != sat_level {
-                self.backtrack(prev_level);
-                return Conflict::Learned(sat_pkg);
+            let sat_cause = sat.cause;
+
+            // Backjump target: the highest level at which every *other* term is
+            // already satisfied, so the satisfier's term is the lone unit.
+            let mut prev = 1usize;
+            for (k, (pkg, term)) in terms.iter().enumerate() {
+                if k == sat_pos {
+                    continue;
+                }
+                let i = self.satisfier_of(pkg, term, n).unwrap();
+                prev = prev.max(self.assignments[i].level);
             }
-            let cause = self.assignments[sat_index].cause.expect("derivation has a cause");
-            ci = self.resolve_incompat(ci, cause, &sat_pkg);
+
+            if sat_is_decision || prev < sat_level {
+                self.backtrack(prev);
+                return Conflict::Learned(p_pkg);
+            }
+
+            let cause = sat_cause.expect("a derivation has a cause");
+            ci = self.build_prior_cause(ci, &terms, sat_pos, cause);
         }
     }
 
-    /// Undecided packages that some positive requirement forces us to select.
+    /// The prior cause of a resolution step: the conflicting incompatibility and
+    /// the satisfier's cause merged (terms for a shared package intersected).
+    /// The satisfier's package P is the resolution variable: its two terms are
+    /// combined as their *union* (as sets of package states, absence included),
+    /// and P is eliminated only when that union is universal. Dropping P whenever
+    /// the version ranges merely cover every version would discard the fact that
+    /// P must still be *present*, over-generalizing the learned clause and
+    /// rejecting solvable instances (a package that could simply be left out).
+    fn build_prior_cause(
+        &mut self,
+        ci: IncompatId,
+        terms: &[(String, Term)],
+        sat_pos: usize,
+        cause: IncompatId,
+    ) -> IncompatId {
+        let p_pkg = terms[sat_pos].0.clone();
+        let t1 = terms[sat_pos].1.clone();
+        let t2 = self
+            .incompats[cause]
+            .term_for(&p_pkg)
+            .cloned()
+            .unwrap_or_else(|| Term::positive(Range::empty()));
+        let shared = t1.union(&t2);
+        let keep_shared = !shared.is_universal();
+
+        let mut merged: Vec<(String, Term)> = Vec::new();
+        let mut add = |q: &str, t: Term| {
+            if let Some(slot) = merged.iter_mut().find(|(x, _)| x == q) {
+                slot.1 = slot.1.intersect(&t);
+            } else {
+                merged.push((q.to_string(), t));
+            }
+        };
+        for (k, (q, t)) in terms.iter().enumerate() {
+            if k != sat_pos {
+                add(q, t.clone());
+            }
+        }
+        for (q, t) in &self.incompats[cause].terms {
+            if *q != p_pkg {
+                add(q, t.clone());
+            }
+        }
+        if keep_shared {
+            add(&p_pkg, shared);
+        }
+        self.add_incompat(merged, Cause::Derived(ci, cause))
+    }
+
+    /// Undecided packages we still have to pick a version for: those a positive
+    /// requirement forces, plus the dependencies of already-decided packages.
+    ///
+    /// The second set matters for soundness. An earlier negative derivation (for
+    /// example, learning a package has no version in some range) can leave a
+    /// package constrained to a set that already *set-satisfies* a later
+    /// dependency, so no positive term is ever derived for it. It still needs a
+    /// concrete version. Its accumulated set is a subset of every dependency
+    /// range that referenced it (that is exactly why those were set-satisfied),
+    /// so any version chosen from that set satisfies them all.
     fn required_undecided(&self) -> Vec<String> {
         let mut seen: Vec<String> = Vec::new();
         for a in &self.assignments {
@@ -264,7 +293,16 @@ impl<'a> Solver<'a> {
                 seen.push(a.package.clone());
             }
         }
-        seen.retain(|p| self.decision(p).is_none());
+        for inc in &self.incompats {
+            if let Cause::Dependency { package, version, dep } = &inc.cause {
+                let decided_here =
+                    self.decision(package).is_some_and(|v| v.to_string() == *version);
+                if decided_here && !seen.contains(dep) {
+                    seen.push(dep.clone());
+                }
+            }
+        }
+        seen.retain(|p| self.decision(p).is_none() && !self.term_for(p).is_empty());
         seen
     }
 

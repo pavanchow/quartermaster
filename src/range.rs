@@ -171,17 +171,19 @@ impl Range {
         // Half-open [>=a, <b): recognise caret and tilde upper bounds.
         if let (Cut::Fin(a, 0), Cut::Fin(b, 0)) = (lo, hi) {
             if a.is_stable() && b.is_stable() {
+                // saturating so a `u64::MAX` part cannot panic here; it simply
+                // fails to match caret/tilde and falls back to the precise form.
                 let caret = if a.major > 0 {
-                    Version::new(a.major + 1, 0, 0)
+                    Version::new(a.major.saturating_add(1), 0, 0)
                 } else if a.minor > 0 {
-                    Version::new(0, a.minor + 1, 0)
+                    Version::new(0, a.minor.saturating_add(1), 0)
                 } else {
-                    Version::new(0, 0, a.patch + 1)
+                    Version::new(0, 0, a.patch.saturating_add(1))
                 };
                 if *b == caret {
                     return format!("^{a}");
                 }
-                if *b == Version::new(a.major, a.minor + 1, 0) {
+                if *b == Version::new(a.major, a.minor.saturating_add(1), 0) {
                     return format!("~{a}");
                 }
             }
@@ -321,15 +323,21 @@ fn parse_comparator(c: &str) -> Result<Range> {
     x_range(&parse_partial(c)?)
 }
 
+/// `n + 1`, but a clean error instead of an overflow panic at `u64::MAX`.
+fn inc(n: u64) -> Result<u64> {
+    n.checked_add(1)
+        .ok_or_else(|| Error::Range("version part is too large".into()))
+}
+
 fn caret(p: &Partial) -> Result<Range> {
     let low = Version::new(p.major, p.minor.unwrap_or(0), p.patch.unwrap_or(0));
     // Up to (but excluding) the next version that changes the leftmost nonzero.
     let high = if p.major > 0 {
-        Version::new(p.major + 1, 0, 0)
+        Version::new(inc(p.major)?, 0, 0)
     } else if p.minor.unwrap_or(0) > 0 {
-        Version::new(0, p.minor.unwrap() + 1, 0)
+        Version::new(0, inc(p.minor.unwrap())?, 0)
     } else {
-        Version::new(0, 0, p.patch.unwrap_or(0) + 1)
+        Version::new(0, 0, inc(p.patch.unwrap_or(0))?)
     };
     Ok(Range::between(low, high))
 }
@@ -338,8 +346,8 @@ fn tilde(p: &Partial) -> Result<Range> {
     let low = Version::new(p.major, p.minor.unwrap_or(0), p.patch.unwrap_or(0));
     // `~1.2.3` and `~1.2` both allow patch-level changes; `~1` allows minor.
     let high = match p.minor {
-        Some(m) => Version::new(p.major, m + 1, 0),
-        None => Version::new(p.major + 1, 0, 0),
+        Some(m) => Version::new(p.major, inc(m)?, 0),
+        None => Version::new(inc(p.major)?, 0, 0),
     };
     Ok(Range::between(low, high))
 }
@@ -349,11 +357,11 @@ fn x_range(p: &Partial) -> Result<Range> {
         (Some(m), Some(pt)) => Ok(Range::exact(Version::new(p.major, m, pt))),
         (Some(m), None) => Ok(Range::between(
             Version::new(p.major, m, 0),
-            Version::new(p.major, m + 1, 0),
+            Version::new(p.major, inc(m)?, 0),
         )),
         (None, _) => Ok(Range::between(
             Version::new(p.major, 0, 0),
-            Version::new(p.major + 1, 0, 0),
+            Version::new(inc(p.major)?, 0, 0),
         )),
     }
 }
