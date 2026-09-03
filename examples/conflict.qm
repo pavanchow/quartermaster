@@ -1,0 +1,4 @@
+name    brokenapp
+version 0.1.0
+require http ^1.2
+require bytes =1.0.0

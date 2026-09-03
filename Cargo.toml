@@ -1,0 +1,18 @@
+[package]
+name = "quartermaster"
+version = "0.1.0"
+edition = "2021"
+description = "A package manager with a readable PubGrub dependency resolver that explains conflicts in plain English."
+license = "MIT"
+repository = "https://github.com/pavanchow/quartermaster"
+
+[[bin]]
+name = "qm"
+path = "src/main.rs"
+
+[lib]
+name = "quartermaster"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
