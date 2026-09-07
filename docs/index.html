@@ -165,7 +165,7 @@
   <details style="margin-top:22px;border:1px solid var(--line);border-radius:14px;padding:16px 20px;background:var(--panel2)">
     <summary style="cursor:pointer;font-weight:600">How to use this playground</summary>
     <div style="margin-top:12px;color:var(--muted);font-size:15px">
-      <p>The <b>left box</b> is your project's direct requirements, one per line: a package name and a version range (<code>web ^1.0</code>). The <b>right box</b> is the registry — every package version that exists, with each version's own dependencies indented beneath it.</p>
+      <p>The <b>left box</b> is your project's direct requirements, one per line: a package name and a version range (<code>web ^1.0</code>). The <b>right box</b> is the registry, every package version that exists, with each version's own dependencies indented beneath it.</p>
       <p style="margin-top:10px">Tap a preset chip to load a ready-made example, then press <b>Resolve</b>. If a valid combination exists you get one pinned version per package plus a dependency tree; if not, you get the numbered proof of exactly which two requirements collide. Edit either box and resolve again to experiment.</p>
     </div>
   </details>
@@ -267,7 +267,7 @@ myapp 0.1.0
 </div></section>
 
 <footer><div class="wrap">
-  <p>Quartermaster — a package manager with a readable PubGrub dependency resolver.</p>
+  <p>Quartermaster, a package manager with a readable PubGrub dependency resolver.</p>
   <p>Built from scratch in Rust by <span class="name">Pavan Nallamothu</span> · <a href="https://github.com/pavanchow/quartermaster">github.com/pavanchow/quartermaster</a></p>
 </div></footer>
 
@@ -547,12 +547,12 @@ function run(){
   if(res.ok){
     const names=Object.keys(res.ok).sort();
     const pins=names.map(n=>`  ${n} <span class="v">${verStr(res.ok[n])}</span>`).join('<br>');
-    out.innerHTML=`<div class="verdict ok">✓ resolved — ${names.length} package${names.length===1?'':'s'} pinned</div>`+
+    out.innerHTML=`<div class="verdict ok">✓ resolved: ${names.length} package${names.length===1?'':'s'} pinned</div>`+
       `<div class="pins">${pins}</div>`+
       `<div class="tree">${esc(renderTree(reqs,res.ok,provider))}</div>`;
   } else {
     const lines=report(res.incompats,res.conflict);
-    out.innerHTML=`<div class="verdict bad">✗ no solution — here is why</div>`+
+    out.innerHTML=`<div class="verdict bad">✗ no solution, here is why</div>`+
       `<ol class="proof">`+lines.map(l=>`<li>${esc(l).replace(//g,'<b>').replace(//g,'</b>')}</li>`).join('')+`</ol>`;
   }
 }
