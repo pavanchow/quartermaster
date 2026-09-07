@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <title>Quartermaster: a package manager with a readable PubGrub dependency resolver, by Pavan Nallamothu</title>
 <meta name="description" content="Quartermaster is a from-scratch package manager in Rust whose core is a readable PubGrub dependency resolver that explains version conflicts in plain English. Resolve constraints, get a lockfile, or a step-by-step proof of why the dependencies conflict. By Pavan Nallamothu (pavanchow).">
 <meta name="author" content="Pavan Nallamothu">
@@ -113,6 +114,7 @@
 </div></nav>
 
 <header class="hero"><div class="wrap">
+  <img src="logo.svg" alt="Quartermaster logo" width="72" height="72" style="display:block;margin:0 auto 20px">
   <div class="eyebrow">Rust · PubGrub dependency resolver</div>
   <h1>Resolve versions.<br>Understand conflicts.</h1>
   <p class="lead">A from-scratch package manager whose interesting half is the resolver: a readable PubGrub version solver that pins every dependency, or proves in plain English why it can't. Try it live below.</p>
@@ -157,6 +159,14 @@
     </div>
     <div class="out" id="out"></div>
   </div>
+
+  <details style="margin-top:22px;border:1px solid var(--line);border-radius:14px;padding:16px 20px;background:var(--panel2)">
+    <summary style="cursor:pointer;font-weight:600">How to use this playground</summary>
+    <div style="margin-top:12px;color:var(--muted);font-size:15px">
+      <p>The <b>left box</b> is your project's direct requirements, one per line: a package name and a version range (<code>web ^1.0</code>). The <b>right box</b> is the registry — every package version that exists, with each version's own dependencies indented beneath it.</p>
+      <p style="margin-top:10px">Tap a preset chip to load a ready-made example, then press <b>Resolve</b>. If a valid combination exists you get one pinned version per package plus a dependency tree; if not, you get the numbered proof of exactly which two requirements collide. Edit either box and resolve again to experiment.</p>
+    </div>
+  </details>
 </div></section>
 
 <section id="why"><div class="wrap">

@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" alt="Quartermaster logo" width="96">
+
 # Quartermaster
 
 **A package manager whose interesting half is a readable dependency resolver — a from-scratch [PubGrub](https://nex3.medium.com/pubgrub-2fb6470504f) version solver that explains a conflict in plain English instead of just failing.** Give it a set of version constraints and a registry and it returns an exact version for every transitive dependency, or a step-by-step proof that no such set exists. Zero dependencies, one small binary. By **Pavan Nallamothu** ([`pavanchow`](https://github.com/pavanchow)).
