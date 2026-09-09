@@ -16,10 +16,12 @@ Quartermaster is built around exactly those two things:
 - **Conflict explanations you can read.** When resolution fails, you get the derivation path, phrased in English:
 
   ```
-  Because http 1.2.0 depends on bytes ^1.1.0 and the project depends on bytes 1.0.0,
-  http ^1.2.0 cannot be used.
-  Because http ^1.2.0 cannot be used and the project depends on http ^1.2.0,
-  the project's requirements are contradictory.
+  $ qm explain examples/conflict.qm --registry examples/registry.qm
+  1. Because no version of http matches >1.2.0, <1.3.0 || >1.3.0, <2.0.0 and http 1.2.0 depends on bytes ^1.1.0, bytes outside ^1.1.0 and http >=1.2.0, <1.3.0 || >1.3.0, <2.0.0 cannot be chosen together.
+  2. Because bytes outside ^1.1.0 and http >=1.2.0, <1.3.0 || >1.3.0, <2.0.0 cannot be chosen together and http 1.3.0 depends on bytes ^1.1.0, bytes outside ^1.1.0 and http ^1.2.0 cannot be chosen together.
+  3. Because bytes outside ^1.1.0 and http ^1.2.0 cannot be chosen together and the project depends on bytes 1.0.0, http ^1.2.0 cannot be used.
+  4. Because http ^1.2.0 cannot be used and the project depends on http ^1.2.0, the project's requirements are contradictory.
+  5. So the project's dependencies cannot be satisfied.
   ```
 
 That is the gap it fills, for a person debugging a lockfile *and* for an AI agent that proposes a dependency set and needs a machine-checkable reason when it doesn't hold — not "resolution failed", but which two requirements to change.
