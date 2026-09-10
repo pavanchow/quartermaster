@@ -6,6 +6,8 @@ Quartermaster is a from-scratch package manager in Rust whose core is a readable
 
 **[Live demo](https://pavanchow.github.io/quartermaster/)** · MIT licensed · pure Rust
 
+Built from scratch by [Pavan Nallamothu](https://pavanchow.github.io/) ([LinkedIn](https://www.linkedin.com/in/pavanchow/), [GitHub](https://github.com/pavanchow)).
+
 ## Why this exists
 
 Every "build your own package manager" tutorial stops at the easy parts (a manifest format, a lockfile, copying files) and hand-waves the one part that is actually hard: **dependency resolution**. Picking a single version of every package such that every constraint holds is NP-hard in general, and doing it well is what separates a real package manager from a toy.
